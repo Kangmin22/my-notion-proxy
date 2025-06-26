@@ -27,8 +27,10 @@ module.exports = async (req, res) => {
 
   try {
     // 1. 전체 페이지 조회
-    const allPages = await kv.get('notion_modules_cache');
-    const pages = JSON.parse(allPages);
+    let pages = await kv.get('notion_modules_cache');
+if (typeof pages === 'string') {
+  pages = JSON.parse(pages);
+}
 
     let resetCount = 0;
 
