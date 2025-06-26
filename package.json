@@ -1,5 +1,5 @@
 {
   "dependencies": {
-    "@vercel/kv": "^1.0.1"
+    "@vercel/kv": "^1.0.1",
+    "js-yaml": "^4.1.0"
   }
-}
