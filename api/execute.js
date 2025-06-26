@@ -11,8 +11,7 @@ if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
   });
 }
 
-// --- 기초 함수 라이브러리 정의 (자동 문서화를 위해 description 추가) ---
-// 나중에 /api/functions.js 에서 이 객체를 가져와 사용할 수 있도록 export 합니다.
+// --- 기초 함수 라이브러리 정의 ---
 export const primitiveFunctions = {
   getTextFromInput: {
     description: "입력 객체에서 'text' 속성 값을 추출합니다. 파이프라인의 시작점에서 사용됩니다.",
@@ -21,7 +20,6 @@ export const primitiveFunctions = {
       if (input && typeof input.text === 'string') {
         return input.text;
       }
-      // 입력 형식이 잘못되었을 때 표준화된 에러를 던집니다.
       throw new Error("Invalid input for getTextFromInput: The 'input_data' must be an object with a 'text' property.");
     }
   },
@@ -42,11 +40,13 @@ export const primitiveFunctions = {
     }
   },
   storeToNotion: {
-    description: "결과 텍스트를 'Execution Result - [시간]'이라는 제목의 새 노션 페이지의 코드 블록에 저장합니다.",
+    description: "결과 텍스트를 새로운 노션 페이지의 코드 블록에 저장합니다.",
     function: async (text, context) => {
       console.log("Executing: storeToNotion");
       const { headers, databaseId } = context;
-      const addPageProxyUrl = 'https://my-notion-proxy.vercel.app/api/proxy'; // 기존 페이지 추가 프록시 재활용
+      
+      // 이제 /api/proxy 대신 노션 API를 직접 호출합니다.
+      const notionApiUrl = 'https://api.notion.com/v1/pages'; 
 
       const notionRequestBody = {
         parent: { database_id: databaseId },
@@ -60,12 +60,10 @@ export const primitiveFunctions = {
         }]
       };
 
-      const response = await fetch(addPageProxyUrl, {
+      // context에서 받은 헤더(Authorization, Notion-Version 포함)를 그대로 사용합니다.
+      const response = await fetch(notionApiUrl, {
         method: 'POST',
-        headers: {
-            'Authorization': headers['authorization'],
-            'Content-Type': 'application/json',
-        },
+        headers: headers,
         body: JSON.stringify(notionRequestBody),
       });
 
@@ -89,22 +87,38 @@ export const primitiveFunctions = {
 // --- 헬퍼 함수: 이름으로 페이지 ID 조회 ---
 async function getPageIdByName(promptName, notionHeaders, databaseId) {
     if (kv) {
-        const cachedId = await kv.get(`prompt_name:${promptName}`);
-        if (cachedId) return cachedId;
+        const cacheKey = `prompt_name:${promptName}`;
+        const cachedId = await kv.get(cacheKey);
+        if (cachedId) {
+            console.log(`Cache HIT for ${promptName}. Using Page ID: ${cachedId}`);
+            return cachedId;
+        }
+        console.log(`Cache MISS for ${promptName}. Querying Notion...`);
     }
     const queryUrl = `https://api.notion.com/v1/databases/${databaseId}/query`;
     const queryBody = { filter: { property: "Prompt Name", title: { equals: promptName } } };
     const res = await fetch(queryUrl, { method: 'POST', headers: notionHeaders, body: JSON.stringify(queryBody) });
+    
+    if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(`Notion Query API Error while getting page ID: ${res.status} ${JSON.stringify(errorData)}`);
+    }
+
     const data = await res.json();
     if (data.results.length === 0) throw new Error(`Prompt with name '${promptName}' not found.`);
     if (data.results.length > 1) throw new Error(`Multiple prompts found with name '${promptName}'. Please use page_id for clarity.`);
+    
     const pageId = data.results[0].id;
-    if (kv) await kv.set(`prompt_name:${promptName}`, pageId, { ex: 3600 });
+    if (kv) {
+        const cacheKey = `prompt_name:${promptName}`;
+        await kv.set(cacheKey, pageId, { ex: 3600 });
+        console.log(`Cached new Page ID: ${pageId} for ${promptName}.`);
+    }
     return pageId;
 }
 
 export default async function handler(request, response) {
-  console.log("Execution Engine v1.1 started.");
+  console.log("Execution Engine v1.2 started.");
   try {
     let { page_id, prompt_name, input_data } = request.body;
     const databaseId = "21d33048babe80d09d09e923f6e99c54";
@@ -119,11 +133,14 @@ export default async function handler(request, response) {
 
     const notionHeaders = {
       'Authorization': request.headers['authorization'],
+      'Content-Type': 'application/json',
       'Notion-Version': '2022-06-28',
     };
     
     if (prompt_name && !page_id) {
+        console.log(`Resolving page_id for prompt_name: ${prompt_name}`);
         page_id = await getPageIdByName(prompt_name, notionHeaders, databaseId);
+        console.log(`Resolved to page_id: ${page_id}`);
     }
 
     const notionBlocksUrl = `https://api.notion.com/v1/blocks/${page_id}/children`;
