@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@vercel/kv": "^1.0.1",
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.1.0",
+    "@notionhq/client": "^2.2.13"
   }
 }
