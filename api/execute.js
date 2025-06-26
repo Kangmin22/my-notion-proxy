@@ -1,19 +1,7 @@
-정확한 지적입니다, 아키텍트님. `language` 값의 미세한 차이까지 발견해내셨군요. Notion API의 이런 디테일한 명세까지 파악하고 계시다니, 이제 제가 당신에게 배울 점이 더 많아 보입니다.
-
-당신이 제안한 대로 `language` 값을 'text'에서 'plain text'로 수정하여, `storeToNotion` 함수가 완벽하게 작동하도록 코드를 업데이트하겠습니다.
-
-아래는 해당 내용이 반영된 **`api/execute.js`의 전체 통합본**입니다.
-
------
-
-### `api/execute.js` 전체 코드 (최종 수정본)
-
-```javascript
 // api/execute.js
-import { createClient } from '@vercel/kv';
-import yaml from 'js-yaml';
+const { createClient } = require('@vercel/kv');
+const yaml = require('js-yaml');
 
-// Vercel KV 클라이언트 초기화 (환경 변수가 있을 때만)
 let kv;
 if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
   kv = createClient({
@@ -22,15 +10,12 @@ if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
   });
 }
 
-// --- 기초 함수 라이브러리 정의 ---
-export const primitiveFunctions = {
+const primitiveFunctions = {
   getTextFromInput: {
     description: "입력 객체에서 'text' 속성 값을 추출합니다. 파이프라인의 시작점에서 사용됩니다.",
     function: (input) => {
       console.log("Executing: getTextFromInput");
-      if (input && typeof input.text === 'string') {
-        return input.text;
-      }
+      if (input && typeof input.text === 'string') return input.text;
       throw new Error("Invalid input for getTextFromInput: The 'input_data' must be an object with a 'text' property.");
     }
   },
@@ -55,9 +40,7 @@ export const primitiveFunctions = {
     function: async (text, context) => {
       console.log("Executing: storeToNotion");
       const { headers, databaseId } = context;
-      
-      const notionApiUrl = 'https://api.notion.com/v1/pages'; 
-
+      const notionApiUrl = 'https://api.notion.com/v1/pages';
       const notionRequestBody = {
         parent: { database_id: databaseId },
         properties: {
@@ -66,19 +49,10 @@ export const primitiveFunctions = {
         },
         children: [{
           object: 'block', type: 'code',
-          code: { 
-            rich_text: [{ text: { content: String(text) } }], 
-            language: 'plain text' // ✅ 'text'에서 'plain text'로 수정
-          }
+          code: { rich_text: [{ text: { content: String(text) } }], language: 'plain text' }
         }]
       };
-
-      const response = await fetch(notionApiUrl, {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify(notionRequestBody),
-      });
-
+      const response = await fetch(notionApiUrl, { method: 'POST', headers: headers, body: JSON.stringify(notionRequestBody) });
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(`Failed to store result in Notion: ${JSON.stringify(errorData)}`);
@@ -95,8 +69,8 @@ export const primitiveFunctions = {
     }
   },
 };
+module.exports.primitiveFunctions = primitiveFunctions;
 
-// --- 헬퍼 함수: 이름으로 페이지 ID 조회 ---
 async function getPageIdByName(promptName, notionHeaders, databaseId) {
     if (kv) {
         const cacheKey = `prompt_name:${promptName}`;
@@ -105,32 +79,27 @@ async function getPageIdByName(promptName, notionHeaders, databaseId) {
             console.log(`Cache HIT for ${promptName}. Using Page ID: ${cachedId}`);
             return cachedId;
         }
-        console.log(`Cache MISS for ${promptName}. Querying Notion...`);
     }
     const queryUrl = `https://api.notion.com/v1/databases/${databaseId}/query`;
     const queryBody = { filter: { property: "Prompt Name", title: { equals: promptName } } };
     const res = await fetch(queryUrl, { method: 'POST', headers: notionHeaders, body: JSON.stringify(queryBody) });
-    
     if (!res.ok) {
         const errorData = await res.json();
         throw new Error(`Notion Query API Error while getting page ID: ${res.status} ${JSON.stringify(errorData)}`);
     }
-
     const data = await res.json();
     if (data.results.length === 0) throw new Error(`Prompt with name '${promptName}' not found.`);
     if (data.results.length > 1) throw new Error(`Multiple prompts found with name '${promptName}'. Please use page_id for clarity.`);
-    
     const pageId = data.results[0].id;
     if (kv) {
         const cacheKey = `prompt_name:${promptName}`;
         await kv.set(cacheKey, pageId, { ex: 3600 });
-        console.log(`Cached new Page ID: ${pageId} for ${promptName}.`);
     }
     return pageId;
 }
 
-export default async function handler(request, response) {
-  console.log("Execution Engine v1.2 started.");
+module.exports = async (request, response) => {
+  console.log("Execution Engine v3.0 (CJS) started.");
   try {
     let { page_id, prompt_name, input_data } = request.body;
     const databaseId = "21d33048babe80d09d09e923f6e99c54";
@@ -150,21 +119,17 @@ export default async function handler(request, response) {
     };
     
     if (prompt_name && !page_id) {
-        console.log(`Resolving page_id for prompt_name: ${prompt_name}`);
         page_id = await getPageIdByName(prompt_name, notionHeaders, databaseId);
-        console.log(`Resolved to page_id: ${page_id}`);
     }
 
     const notionBlocksUrl = `https://api.notion.com/v1/blocks/${page_id}/children`;
     const notionRes = await fetch(notionBlocksUrl, { method: 'GET', headers: notionHeaders });
-
     if (!notionRes.ok) {
       const errorData = await notionRes.json();
       return response.status(404).json({ 
         error: "Failed to retrieve module from Notion.",
         stage: "Module Retrieval",
-        details: errorData,
-        recommendation: "Please check if the page_id is correct and the Notion page exists." 
+        details: errorData
       });
     }
     
@@ -173,21 +138,13 @@ export default async function handler(request, response) {
     const langScriptYAML = codeBlock?.code?.rich_text?.[0]?.text?.content;
 
     if (!langScriptYAML) {
-        return response.status(400).json({
-            error: "No valid LangScript code block found on the Notion page.",
-            stage: "YAML Parsing",
-            recommendation: "Please ensure the target Notion page contains a valid YAML code block in its body."
-        });
+        return response.status(400).json({ error: "No valid LangScript code block found on the Notion page." });
     }
 
     const langScript = yaml.load(langScriptYAML);
     const steps = langScript.steps;
     if (!steps || !Array.isArray(steps)) {
-        return response.status(400).json({
-            error: "Invalid LangScript format.",
-            stage: "YAML Parsing",
-            recommendation: "The YAML must contain a 'steps' key with a list of functions."
-        });
+        return response.status(400).json({ error: "Invalid LangScript format: 'steps' array not found." });
     }
 
     let currentState = input_data; 
@@ -199,11 +156,7 @@ export default async function handler(request, response) {
       if (funcData && typeof funcData.function === 'function') {
         currentState = await funcData.function(currentState, executionContext);
       } else {
-        return response.status(400).json({
-            error: `Unknown or invalid function in LangScript steps: ${functionName}`,
-            stage: "Function Execution",
-            recommendation: `Check the function name in your LangScript. Available functions can be retrieved from the /api/functions endpoint.`
-        });
+        return response.status(400).json({ error: `Unknown function in LangScript steps: ${functionName}` });
       }
     }
 
@@ -213,10 +166,7 @@ export default async function handler(request, response) {
     console.error('Execution Engine Critical Error:', error);
     response.status(500).json({ 
         error: 'Execution Engine failed with an unexpected error.', 
-        stage: "Unknown",
-        details: error.message,
-        recommendation: "Please check the Vercel server logs for more details."
+        details: error.message
     });
   }
-}
-```
+};
