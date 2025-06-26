@@ -1,5 +1,5 @@
 // api/append.js
-export default async function handler(request, response) {
+module.exports = async (request, response) => {
   try {
     const pageId = request.body.page_id;
     const blockText = request.body.block_text;
@@ -9,19 +9,12 @@ export default async function handler(request, response) {
     }
 
     const notionApiUrl = `https://api.notion.com/v1/blocks/${pageId}/children`;
-
     const { headers } = request;
 
-    // 노션에 보낼 '코드 블록' 형식의 본문 데이터
     const notionRequestBody = {
       "children": [
-        {
-          "object": "block",
-          "type": "code",
-          "code": {
-            "rich_text": [{ "type": "text", "text": { "content": blockText } }],
-            "language": "yaml"
-          }
+        { "object": "block", "type": "code",
+          "code": { "rich_text": [{ "type": "text", "text": { "content": blockText } }], "language": "yaml" }
         }
       ]
     };
@@ -32,12 +25,7 @@ export default async function handler(request, response) {
       'Notion-Version': '2022-06-28',
     };
 
-    // 노션 API로 PATCH 요청을 보내 블록을 추가합니다.
-    const notionResponse = await fetch(notionApiUrl, {
-      method: 'PATCH',
-      headers: notionHeaders,
-      body: JSON.stringify(notionRequestBody),
-    });
+    const notionResponse = await fetch(notionApiUrl, { method: 'PATCH', headers: notionHeaders, body: JSON.stringify(notionRequestBody) });
 
     if (!notionResponse.ok) {
       const errorData = await notionResponse.json();
@@ -46,9 +34,8 @@ export default async function handler(request, response) {
 
     const data = await notionResponse.json();
     response.status(200).json(data);
-
   } catch (error) {
-    console.error('Detailed proxy error:', error);
+    console.error('Proxy Error (/api/append):', error);
     response.status(500).json({ error: 'Proxy server encountered an error.', details: error.message });
   }
-}
+};
