@@ -1,45 +1,79 @@
 // api/retrieveByName.js
-import { createClient } from '@vercel/kv';
+const { createClient } = require('@vercel/kv');
 
 let kv;
+// Vercel 환경 변수가 있을 때만 KV 클라이언트를 생성합니다.
 if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
-  kv = createClient({ /*...*/ });
+  kv = createClient({
+    url: process.env.KV_REST_API_URL,
+    token: process.env.KV_REST_API_TOKEN,
+  });
 }
 
-export default async function handler(request, response) {
+module.exports = async (request, response) => {
+  console.log("Function 'retrieveByName' started.");
   try {
     const promptName = request.body.prompt_name;
     const databaseId = "21d33048babe80d09d09e923f6e99c54";
 
-    if (!promptName) { /* ... */ }
-
-    const { headers } = request;
-    const notionHeaders = { /* ... */ };
-
-    let pageId;
-    const cacheKey = `prompt_name:${promptName}`;
-    if (kv) pageId = await kv.get(cacheKey);
-
-    if (!pageId) {
-      // ... 캐시 미스 시 노션 DB 쿼리 로직 (이전과 동일) ...
-      const queryData = await queryResponse.json();
-      // ... 404, 중복 결과 처리 로직 (이전과 동일) ...
-      pageId = queryData.results[0].id;
-      if (kv) await kv.set(cacheKey, pageId, { ex: 3600 });
+    if (!promptName) {
+      return response.status(400).json({ error: 'Proxy Error: prompt_name is missing.' });
     }
 
-    // --- 핵심 로직 변경: 페이지 ID로 본문의 '첫 페이지만' 조회 ---
-    const retrieveUrl = `https://api.notion.com/v1/blocks/${pageId}/children`;
-    const retrieveResponse = await fetch(retrieveUrl, { method: 'GET', headers: notionHeaders });
-
-    if (!retrieveResponse.ok) { /* ... 에러 처리 ... */ }
-
-    const retrieveData = await retrieveResponse.json();
+    const { headers } = request;
+    const notionHeaders = {
+      'Authorization': headers['authorization'],
+      'Content-Type': 'application/json',
+      'Notion-Version': '2022-06-28',
+    };
     
-    // GPT가 다음 페이지를 요청할 수 있도록, 페이지 ID를 응답에 추가해줌
-    retrieveData.page_id_for_pagination = pageId; 
-    
-    response.status(200).json(retrieveData);
+    let pageId;
+    const cacheKey = `prompt_name:${promptName}`;
 
-  } catch (error) { /* ... */ }
-}
+    if (kv) {
+      console.log(`Checking cache with key: ${cacheKey}`);
+      pageId = await kv.get(cacheKey);
+    } else {
+      console.log("KV client not initialized. Skipping cache.");
+    }
+
+    if (pageId) {
+      console.log(`Cache HIT for ${promptName}. Using Page ID: ${pageId}`);
+    } else {
+      console.log(`Cache MISS for ${promptName}. Querying Notion API...`);
+      const queryUrl = `https://api.notion.com/v1/databases/${databaseId}/query`;
+      const queryBody = { filter: { property: "Prompt Name", title: { equals: promptName } } };
+      
+      const queryResponse = await fetch(queryUrl, {
+        method: 'POST',
+        headers: notionHeaders,
+        body: JSON.stringify(queryBody),
+      });
+
+      if (!queryResponse.ok) {
+          const errorData = await queryResponse.json();
+          throw new Error(`Notion Query API Error: ${queryResponse.status} ${JSON.stringify(errorData)}`);
+      }
+
+      const queryData = await queryResponse.json();
+      console.log(`Notion query returned ${queryData.results.length} results.`);
+
+      if (queryData.results.length === 0) {
+        return response.status(404).json({ error: `Prompt with name '${promptName}' not found.` });
+      }
+
+      if (queryData.results.length > 1) {
+        const multipleResults = queryData.results.map(page => ({
+          page_id: page.id,
+          prompt_name: page.properties["Prompt Name"].title[0]?.plain_text || 'Untitled',
+          version: page.properties["Version"]?.number || null,
+          status: page.properties["Status"]?.status?.name || 'No Status'
+        }));
+        return response.status(200).json({ 
+          type: "multiple_choices", 
+          message: "Multiple prompts found. Please select one.",
+          choices: multipleResults 
+        });
+      }
+      
+      page
