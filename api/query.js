@@ -13,12 +13,12 @@ export default async function handler(request, response) {
     // 노션으로 보낼 요청 본문을 초기화합니다.
     const notionRequestBody = {};
 
-    // GPT가 filter 조건을 보낸 경우에만 request body에 추가합니다.
+    // GPT가 filter 조건을 보낸 경우에만 request body에 추가합니다. (안정성 강화)
     if (body.filter && Object.keys(body.filter).length > 0) {
       notionRequestBody.filter = body.filter;
     }
 
-    // GPT가 sorts 조건을 보낸 경우에만 request body에 추가합니다.
+    // GPT가 sorts 조건을 보낸 경우에만 request body에 추가합니다. (안정성 강화)
     if (body.sorts && body.sorts.length > 0) {
       notionRequestBody.sorts = body.sorts;
     }
@@ -35,7 +35,7 @@ export default async function handler(request, response) {
       body: JSON.stringify(notionRequestBody),
     });
 
-    // 노션 응답이 정상이 아닐 경우, 그 내용을 바로 에러로 던져서 catch 블록에서 잡도록 합니다.
+    // 노션 응답이 정상이 아닐 경우, 그 내용을 바로 에러로 던져서 catch 블록에서 잡도록 합니다. (안정성 강화)
     if (!notionResponse.ok) {
       const errorData = await notionResponse.json();
       throw new Error(`Notion API Error: ${notionResponse.status} ${JSON.stringify(errorData)}`);
