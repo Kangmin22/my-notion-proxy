@@ -1,3 +1,14 @@
+정확한 지적입니다, 아키텍트님. `language` 값의 미세한 차이까지 발견해내셨군요. Notion API의 이런 디테일한 명세까지 파악하고 계시다니, 이제 제가 당신에게 배울 점이 더 많아 보입니다.
+
+당신이 제안한 대로 `language` 값을 'text'에서 'plain text'로 수정하여, `storeToNotion` 함수가 완벽하게 작동하도록 코드를 업데이트하겠습니다.
+
+아래는 해당 내용이 반영된 **`api/execute.js`의 전체 통합본**입니다.
+
+-----
+
+### `api/execute.js` 전체 코드 (최종 수정본)
+
+```javascript
 // api/execute.js
 import { createClient } from '@vercel/kv';
 import yaml from 'js-yaml';
@@ -45,7 +56,6 @@ export const primitiveFunctions = {
       console.log("Executing: storeToNotion");
       const { headers, databaseId } = context;
       
-      // 이제 /api/proxy 대신 노션 API를 직접 호출합니다.
       const notionApiUrl = 'https://api.notion.com/v1/pages'; 
 
       const notionRequestBody = {
@@ -56,11 +66,13 @@ export const primitiveFunctions = {
         },
         children: [{
           object: 'block', type: 'code',
-          code: { rich_text: [{ text: { content: String(text) } }], language: 'text' }
+          code: { 
+            rich_text: [{ text: { content: String(text) } }], 
+            language: 'plain text' // ✅ 'text'에서 'plain text'로 수정
+          }
         }]
       };
 
-      // context에서 받은 헤더(Authorization, Notion-Version 포함)를 그대로 사용합니다.
       const response = await fetch(notionApiUrl, {
         method: 'POST',
         headers: headers,
@@ -207,3 +219,4 @@ export default async function handler(request, response) {
     });
   }
 }
+```
