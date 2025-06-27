@@ -13,11 +13,11 @@ export default async function handler(req, res) {
   }
 
   const notionHeaders = {
-    'Authorization': `Bearer ${process.env.NOTION_TOKEN}`,
+    'Authorization': `Bearer ${process.env.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}`,
     'Content-Type': 'application/json',
     'Notion-Version': '2022-06-28'
   };
-  const databaseId = process.env.NOTION_DATABASE_ID;
+  const databaseId = process.env.21d33048-babe-80d0-9d09-e923f6e99c54;
   const results = [];
 
   for (const module of modules) {
