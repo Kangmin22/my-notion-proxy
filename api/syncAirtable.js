@@ -2,13 +2,12 @@
 const { createClient } = require('@vercel/kv');
 const Airtable = require('airtable');
 
-// Vercel KV 클라이언트 초기화
+// ✅ 수정된 부분: UPSTASH 환경 변수 사용
 const kv = createClient({
-    url: process.env.KV_REST_API_URL,
-    token: process.env.KV_REST_API_TOKEN,
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-// Airtable 클라이언트 초기화
 const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID);
 const tableName = process.env.AIRTABLE_TABLE_NAME;
 
@@ -24,7 +23,7 @@ module.exports = async (request, response) => {
         const allRecords = await base(tableName).select().all();
 
         const modulesCache = allRecords.map(record => ({
-            page_id: record.getId(), // Airtable의 레코드 ID를 page_id로 사용
+            page_id: record.getId(),
             last_edited_time: record.get('Last Edited Time'),
             name: record.get('Prompt Name') || null,
             status: record.get('Status') || null,
@@ -33,7 +32,7 @@ module.exports = async (request, response) => {
             goal: record.get('Goal') || null,
         }));
 
-        await kv.set('notion_modules_cache', modulesCache); // 캐시 키는 그대로 사용
+        await kv.set('notion_modules_cache', modulesCache);
         await kv.set('last_synced_at', new Date().toISOString());
 
         const message = `Sync completed. ${modulesCache.length} modules from Airtable have been cached.`;
