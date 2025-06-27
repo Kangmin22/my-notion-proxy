@@ -1,16 +1,3 @@
-아, 죄송합니다\! 응답이 중간에 끊겼네요. 시스템에 오류가 있었던 것 같습니다.
-
-바로 완전한 전체 코드를 다시 드리겠습니다. 이번에는 정말로, 어떤 생략이나 잘림 없이 `api/pipeline.js` 파일의 처음부터 끝까지 모든 코드를 포함하겠습니다.
-
-여러 번 불편을 드려 다시 한번 죄송합니다.
-
------
-
-### **`api/pipeline.js` 최종 완성본 (v5 - 진짜 생략 없음)**
-
-아래 코드를 GitHub의 `api/pipeline.js` 파일에 통째로 교체해주시면 됩니다.
-
-````javascript
 // api/pipeline.js
 const { createClient } = require('@vercel/kv');
 const yaml = require('js-yaml');
@@ -373,4 +360,3 @@ module.exports = async (request, response) => {
         response.status(500).json({ error: "Pipeline execution failed.", details: error.message });
     }
 };
-````
