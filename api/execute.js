@@ -1,13 +1,18 @@
+// api/execute.js
 const { createClient } = require('@vercel/kv');
 const yaml = require('js-yaml');
+const Airtable = require('airtable');
 
-let kv;
-if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
-  kv = createClient({
+// Vercel KV 클라이언트 초기화
+const kv = createClient({
     url: process.env.KV_REST_API_URL,
     token: process.env.KV_REST_API_TOKEN,
-  });
-}
+});
+
+// Airtable 클라이언트 초기화
+const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID);
+const tableName = process.env.AIRTABLE_TABLE_NAME;
+
 
 const primitiveFunctions = {
   getTextFromInput: {
@@ -34,31 +39,19 @@ const primitiveFunctions = {
       return text.split('\n').map(line => `- ${line}`).join('\n');
     }
   },
-  storeToNotion: {
-    description: "결과를 새로운 노션 페이지 코드 블럭에 저장.",
+  storeToAirtable: {
+    description: "결과를 새로운 Airtable 레코드에 저장.",
     function: async (text, context) => {
-      console.log("Executing: storeToNotion");
-      const { headers, databaseId } = context;
-      const notionApiUrl = 'https://api.notion.com/v1/pages';
-      const body = {
-        parent: { database_id: databaseId },
-        properties: {
-          "Prompt Name": { title: [{ text: { content: `Execution Result - ${new Date().toISOString()}` } }] },
-          "Status": { status: { name: "최종 완료" } },
-        },
-        children: [{
-          object: 'block',
-          type: 'code',
-          code: { rich_text: [{ text: { content: String(text) } }], language: 'plain text' }
-        }]
+      console.log("Executing: storeToAirtable");
+      
+      const newRecord = {
+        "Prompt Name": `Execution Result - ${new Date().toISOString()}`,
+        "Status": "최종 완료",
+        "Goal": String(text) // 결과를 Goal 필드에 저장
       };
-      const res = await fetch(notionApiUrl, { method: 'POST', headers, body: JSON.stringify(body) });
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(`Failed to store result in Notion: ${JSON.stringify(errorData)}`);
-      }
-      const data = await res.json();
-      return `Stored result in Notion. Page ID: ${data.id}`;
+
+      const createdRecords = await base(tableName).create([{ fields: newRecord }]);
+      return `Stored result in Airtable. Record ID: ${createdRecords[0].getId()}`;
     }
   },
   logOutput: {
@@ -71,93 +64,74 @@ const primitiveFunctions = {
 };
 module.exports.primitiveFunctions = primitiveFunctions;
 
-async function getPageIdByName(promptName, notionHeaders, databaseId) {
-  if (kv) {
+async function getRecordByName(promptName) {
     const cacheKey = `prompt_name:${promptName}`;
-    const cachedId = await kv.get(cacheKey);
-    if (cachedId) {
-      console.log(`Cache HIT for ${promptName}. Page ID: ${cachedId}`);
-      return cachedId;
+    const cachedRecord = await kv.get(cacheKey);
+    if (cachedRecord) {
+        console.log(`Cache HIT for ${promptName}.`);
+        return cachedRecord;
     }
-  }
-  const queryUrl = `https://api.notion.com/v1/databases/${databaseId}/query`;
-  const queryBody = { filter: { property: "Prompt Name", title: { equals: promptName } } };
-  const res = await fetch(queryUrl, { method: 'POST', headers: notionHeaders, body: JSON.stringify(queryBody) });
-  if (!res.ok) {
-    const errorData = await res.json();
-    throw new Error(`Notion Query Error: ${res.status} ${JSON.stringify(errorData)}`);
-  }
-  const data = await res.json();
-  if (data.results.length !== 1) throw new Error(`Prompt '${promptName}' not uniquely found.`);
-  const pageId = data.results[0].id;
-  if (kv) await kv.set(`prompt_name:${promptName}`, pageId, { ex: 3600 });
-  return pageId;
+
+    console.log(`Cache MISS for ${promptName}. Querying Airtable...`);
+    const records = await base(tableName).select({
+        filterByFormula: `{Prompt Name} = "${promptName}"`,
+        maxRecords: 1
+    }).firstPage();
+
+    if (records.length === 0) {
+        throw new Error(`Prompt '${promptName}' not found in Airtable.`);
+    }
+    
+    const record = records[0];
+    const result = {
+        id: record.getId(),
+        yaml_script: record.get('YAML Script'),
+    };
+    
+    await kv.set(cacheKey, result, { ex: 3600 }); // 1시간 동안 캐시
+    return result;
 }
 
 module.exports = async (request, response) => {
-  console.log("Execution Engine v3.1 started.");
+  console.log("Execution Engine for Airtable started.");
   try {
-    let { page_id, prompt_name, input_data } = request.body;
-    const databaseId = "21d33048babe80d09d09e923f6e99c54";
+    const { prompt_name, input_data } = request.body;
 
-    if ((!page_id && !prompt_name) || !input_data) {
+    if (!prompt_name || !input_data) {
       return response.status(400).json({ 
-        error: "Missing page_id or prompt_name, or input_data.",
+        error: "Missing prompt_name or input_data.",
         stage: "Input Validation"
       });
     }
-
-    const notionHeaders = {
-      'Authorization': request.headers['authorization'],
-      'Content-Type': 'application/json',
-      'Notion-Version': '2022-06-28',
-    };
     
-    if (prompt_name && !page_id) {
-      page_id = await getPageIdByName(prompt_name, notionHeaders, databaseId);
-    }
-
-    const notionBlocksUrl = `https://api.notion.com/v1/blocks/${page_id}/children`;
-    const notionRes = await fetch(notionBlocksUrl, { method: 'GET', headers: notionHeaders });
-    if (!notionRes.ok) {
-      const errorData = await notionRes.json();
-      return response.status(404).json({ 
-        error: "Failed to retrieve LangScript module from Notion.",
-        stage: "Module Retrieval",
-        details: errorData
-      });
-    }
-
-    const blocks = await notionRes.json();
-    const codeBlock = blocks.results.find(b => b.type === 'code');
-    const langScriptYAML = codeBlock?.code?.rich_text?.[0]?.text?.content;
+    const moduleRecord = await getRecordByName(prompt_name);
+    const langScriptYAML = moduleRecord.yaml_script;
 
     if (!langScriptYAML) {
-      return response.status(400).json({ error: "No valid LangScript code block found." });
+      return response.status(400).json({ error: "No valid LangScript YAML content found in the Airtable record." });
     }
 
     const langScript = yaml.load(langScriptYAML);
     const steps = langScript.steps;
     if (!steps || !Array.isArray(steps)) {
-      return response.status(400).json({ error: "Invalid LangScript format: 'steps' missing." });
+      return response.status(400).json({ error: "Invalid LangScript format: 'steps' missing or not an array." });
     }
-
+    
     const idToFunctionMap = {
       extract_input: "getTextFromInput",
       summarize: "summarizeText",
       finalize: "logOutput",
       format_list: "formatList",
-      store_result: "storeToNotion",
+      store_result: "storeToAirtable",
     };
 
     let currentState = input_data;
-    const executionContext = { headers: notionHeaders, databaseId };
 
     for (const step of steps) {
       const functionName = step.function || idToFunctionMap[step.id];
       const funcData = primitiveFunctions[functionName];
       if (funcData && typeof funcData.function === 'function') {
-        currentState = await funcData.function(currentState, executionContext);
+        currentState = await funcData.function(currentState);
       } else {
         return response.status(400).json({ error: `Unknown function: ${functionName}` });
       }
