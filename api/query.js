@@ -1,9 +1,10 @@
 // api/query.js
 const { createClient } = require('@vercel/kv');
 
+// ✅ 수정된 부분: UPSTASH 환경 변수 사용
 const kv = createClient({
-  url: process.env.KV_REST_API_URL,
-  token: process.env.KV_REST_API_TOKEN,
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
 module.exports = async (request, response) => {
