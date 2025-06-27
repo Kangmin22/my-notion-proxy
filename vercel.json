@@ -1,7 +1,7 @@
 {
   "crons": [
     {
-      "path": "/api/syncNotion",
+      "path": "/api/syncAirtable",
       "schedule": "0 * * * *"
     }
   ]
