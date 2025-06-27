@@ -15,7 +15,6 @@ const tableName = process.env.AIRTABLE_TABLE_NAME;
 
 // 모든 실행 가능한 기초 함수 모음
 const primitiveFunctions = {
-    // === 기존 함수 ===
     getTextFromInput: {
         description: "입력 객체에서 'text' 속성 값을 추출합니다.",
         function: (input) => {
@@ -27,16 +26,18 @@ const primitiveFunctions = {
     },
     summarizeText: {
         description: "텍스트를 50자 이내로 요약합니다.",
-        function: (text) => {
+        function: (input) => {
           console.log("Executing: summarizeText");
+          const text = (typeof input === 'object' && input !== null && input.text) ? input.text : input;
           if (typeof text !== 'string') throw new Error("Invalid input for summarizeText.");
           return text.substring(0, 50) + "... (summarized)";
         }
     },
     formatList: {
         description: "개행 문자 기준 목록으로 포맷.",
-        function: (text) => {
+        function: (input) => {
           console.log("Executing: formatList");
+          const text = (typeof input === 'object' && input !== null && input.text) ? input.text : input;
           if (typeof text !== 'string') throw new Error("Invalid input for formatList.");
           return text.split('\n').map(line => `- ${line}`).join('\n');
         }
@@ -56,8 +57,9 @@ const primitiveFunctions = {
     },
     logOutput: {
         description: "최종 결과 로그 문자열 생성.",
-        function: (text) => {
+        function: (input) => {
           console.log("Executing: logOutput");
+          const text = (typeof input === 'object' && input !== null && input.text) ? input.text : input;
           return `[Execution Result Log]: ${text}`;
         }
     },
@@ -66,25 +68,25 @@ const primitiveFunctions = {
       function: async (text) => {
         console.log("Executing: exportToDocumentSystem");
         const documentKey = `document:${new Date().toISOString()}`;
-        await kv.set(documentKey, String(text), { ex: 604800 }); // 7일간 저장
+        await kv.set(documentKey, String(text), { ex: 604800 });
         const successMessage = `Result successfully saved to internal document store with key: ${documentKey}`;
         console.log(successMessage);
         return successMessage;
       }
     },
-
-    // === 1. 입력 처리 함수 (Preprocessing) ===
     trimWhitespace: {
         description: "텍스트의 앞뒤 공백을 제거합니다.",
-        function: (text) => {
+        function: (input) => {
             console.log("Executing: trimWhitespace");
+            const text = (typeof input === 'object' && input !== null && input.text) ? input.text : input;
             return String(text).trim();
         }
     },
     normalizeNewlines: {
         description: "다양한 형태의 줄바꿈 문자를 \\n으로 통일합니다.",
-        function: (text) => {
+        function: (input) => {
             console.log("Executing: normalizeNewlines");
+            const text = (typeof input === 'object' && input !== null && input.text) ? input.text : input;
             return String(text).replace(/\r\n|\r/g, '\n');
         }
     },
@@ -99,12 +101,11 @@ const primitiveFunctions = {
             return text.split(delimiter);
         }
     },
-
-    // === 2. 분석/추출 함수 ===
     extractKeywords: {
         description: "텍스트에서 간단한 방법으로 핵심 키워드를 추출합니다.",
-        function: (text) => {
+        function: (input) => {
             console.log("Executing: extractKeywords");
+            const text = (typeof input === 'object' && input !== null && input.text) ? input.text : input;
             const stopWords = new Set(['i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 'your', 'yours', 'he', 'him', 'his', 'she', 'her', 'it', 'its', 'they', 'them', 'their', 'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does', 'did', 'doing', 'a', 'an', 'the', 'and', 'but', 'if', 'or', 'because', 'as', 'until', 'while', 'of', 'at', 'by', 'for', 'with', 'about', 'to', 'from', 'in', 'out', 'on']);
             const words = String(text).toLowerCase().match(/\b(\w+)\b/g) || [];
             const freq = words.reduce((acc, word) => {
@@ -113,27 +114,28 @@ const primitiveFunctions = {
                 }
                 return acc;
             }, {});
-            return Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 5).map(entry => entry[0]);
+            const keywords = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 5).map(entry => entry[0]);
+            return [['keyword'], ...keywords.map(k => [k])];
         }
     },
     detectLanguage: {
         description: "텍스트 언어를 판별합니다. (현재는 한글/영어만 간이 판별)",
-        function: (text) => {
+        function: (input) => {
             console.log("Executing: detectLanguage");
+            const text = (typeof input === 'object' && input !== null && input.text) ? input.text : input;
             const koreanRegex = /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/;
             return koreanRegex.test(text) ? 'ko' : 'en';
         }
     },
     countWords: {
         description: "텍스트의 단어 수를 계산합니다.",
-        function: (text) => {
+        function: (input) => {
             console.log("Executing: countWords");
+            const text = (typeof input === 'object' && input !== null && input.text) ? input.text : input;
             const matches = String(text).match(/\b(\w+)\b/g);
             return matches ? matches.length : 0;
         }
     },
-
-    // === 3. 후처리 및 출력용 함수 ===
     wrapInMarkdownCodeBlock: {
         description: "결과를 Markdown 코드 블록으로 감쌉니다.",
         function: (text) => {
@@ -163,8 +165,6 @@ const primitiveFunctions = {
             return [headerLine, separatorLine, rowLines].join('\n');
         }
     },
-
-    // === 4. 외부 저장/전송 함수 ===
     storeToFilesystem: {
         description: "[PLACEHOLDER] 결과를 파일 시스템(S3 등)에 저장합니다. (구현 필요)",
         function: async (text) => {
@@ -205,8 +205,6 @@ const primitiveFunctions = {
             return `Result pushed to history. History now contains ${history.length} items.`;
         }
     },
-
-    // === 5. 유틸/디버깅 함수 ===
     logInput: {
         description: "현재 step의 입력을 콘솔 로그로 남기고 그대로 반환합니다.",
         function: (input) => {
@@ -230,7 +228,6 @@ const primitiveFunctions = {
     }
 };
 
-// 이름으로 Airtable 레코드를 찾는 함수 (캐시 기능 포함)
 async function getRecordByName(promptName) {
     const cacheKey = `prompt_name:${promptName}`;
     const cachedRecord = await kv.get(cacheKey);
@@ -251,9 +248,8 @@ async function getRecordByName(promptName) {
     return record;
 }
 
-// 파이프라인 실행기 메인 로직 v3
 module.exports = async (request, response) => {
-    console.log("Pipeline Engine v3 started.");
+    console.log("Pipeline Engine v4 started.");
 
     if (request.method !== 'POST') {
         return response.status(405).json({ error: 'Method Not Allowed' });
@@ -335,7 +331,7 @@ module.exports = async (request, response) => {
             await kv.set(snapshotKey, moduleState, { ex: 86400 }); 
             execution_logs.push(`Snapshot for module '${moduleName}' saved to KV with key: ${snapshotKey}`);
 
-            currentState = { text: moduleState }; 
+            currentState = moduleState; 
             finalResult = moduleState; 
         }
 
@@ -358,7 +354,7 @@ module.exports = async (request, response) => {
         }
 
     } catch (error) {
-        console.error("Pipeline Engine v3 Error:", error);
+        console.error("Pipeline Engine v4 Error:", error);
         response.status(500).json({ error: "Pipeline execution failed.", details: error.message });
     }
 };
