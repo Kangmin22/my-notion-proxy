@@ -5,7 +5,7 @@ const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process
 const tableName = process.env.AIRTABLE_TABLE_NAME;
 
 module.exports = async (request, response) => {
-    console.log("Create Module API v2 (YAML Generator) started.");
+    console.log("Create Module API v3 (YAML Generator) started.");
 
     if (request.method !== 'POST') {
         return response.status(405).json({ error: 'Method Not Allowed' });
@@ -18,14 +18,14 @@ module.exports = async (request, response) => {
             return response.status(400).json({ error: 'Missing required fields: prompt_name and a steps array are required.' });
         }
 
-        // [핵심 변경사항] 서버에서 직접 안전한 YAML 문자열을 생성합니다.
-        const stepsYAML = steps.map(step => `  - id: ${step}`).join('\n');
+        // [수정된 부분] id: 대신 function: 을 사용하도록 변경
+        const stepsYAML = steps.map(step => `  - function: ${step}`).join('\n');
         const finalYAML = `goal: ${goal || 'No goal specified.'}\nsteps:\n${stepsYAML}`;
 
         const newRecord = {
             "Prompt Name": prompt_name,
             "Goal": goal || "",
-            "YAML Script": finalYAML, // 생성된 YAML을 저장
+            "YAML Script": finalYAML,
             "Version": version || 1.0,
             "Status": status || "작성 중",
             "Tags": tags || []
