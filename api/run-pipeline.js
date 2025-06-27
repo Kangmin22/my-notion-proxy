@@ -37,7 +37,7 @@ async function getRecordByName(promptName) {
     }
     
     const record = { id: records[0].getId(), yaml_script: records[0].get('YAML Script') };
-    await kv.set(cacheKey, record, { ex: 3600 });
+    await kv.set(cacheKey, record, { ex: 3600 }); // 1시간 동안 캐시
     return record;
 }
 
@@ -62,7 +62,7 @@ module.exports = async (request, response) => {
             const langScript = yaml.load(langScriptYAML);
             const steps = langScript.steps;
             if (!steps || !Array.isArray(steps)) throw new Error(`Invalid LangScript format in module: ${moduleName}`);
-
+            
             let moduleState = currentState;
 
             for (const step of steps) {
@@ -70,8 +70,16 @@ module.exports = async (request, response) => {
                 const funcData = primitiveFunctions[functionName];
                 if (!funcData) throw new Error(`Unknown function '${functionName}' in module '${moduleName}'`);
                 
-                moduleState = await funcData.function(moduleState);
-                execution_logs.push(`Step '${functionName}' in '${moduleName}' executed successfully.`);
+                // 에러 발생 시에도 파이프라인이 중단되지 않도록 try-catch 추가
+                try {
+                    moduleState = await funcData.function(moduleState);
+                    execution_logs.push(`Step '${functionName}' in '${moduleName}' executed successfully.`);
+                } catch (stepError) {
+                    const errorMessage = `Step '${functionName}' in '${moduleName}' failed. Error: ${stepError.message}. Skipping step.`;
+                    console.error(errorMessage);
+                    execution_logs.push(`[ERROR] ${errorMessage}`);
+                    // 실패 시 이전 상태를 그대로 다음 스텝으로 전달
+                }
             }
             currentState = moduleState; 
         }
@@ -83,7 +91,7 @@ module.exports = async (request, response) => {
         });
 
     } catch (error) {
-        console.error("Pipeline Engine Refactored Error:", error);
+        console.error("Pipeline Engine Critical Error:", error);
         response.status(500).json({ error: "Pipeline execution failed.", details: error.message });
     }
 };
