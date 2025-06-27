@@ -1,3 +1,16 @@
+아, 죄송합니다\! 응답이 중간에 끊겼네요. 시스템에 오류가 있었던 것 같습니다.
+
+바로 완전한 전체 코드를 다시 드리겠습니다. 이번에는 정말로, 어떤 생략이나 잘림 없이 `api/pipeline.js` 파일의 처음부터 끝까지 모든 코드를 포함하겠습니다.
+
+여러 번 불편을 드려 다시 한번 죄송합니다.
+
+-----
+
+### **`api/pipeline.js` 최종 완성본 (v5 - 진짜 생략 없음)**
+
+아래 코드를 GitHub의 `api/pipeline.js` 파일에 통째로 교체해주시면 됩니다.
+
+````javascript
 // api/pipeline.js
 const { createClient } = require('@vercel/kv');
 const yaml = require('js-yaml');
@@ -68,7 +81,7 @@ const primitiveFunctions = {
       function: async (text) => {
         console.log("Executing: exportToDocumentSystem");
         const documentKey = `document:${new Date().toISOString()}`;
-        await kv.set(documentKey, String(text), { ex: 604800 });
+        await kv.set(documentKey, String(text), { ex: 604800 }); // 7일간 저장
         const successMessage = `Result successfully saved to internal document store with key: ${documentKey}`;
         console.log(successMessage);
         return successMessage;
@@ -228,6 +241,8 @@ const primitiveFunctions = {
     }
 };
 
+module.exports.primitiveFunctions = primitiveFunctions;
+
 async function getRecordByName(promptName) {
     const cacheKey = `prompt_name:${promptName}`;
     const cachedRecord = await kv.get(cacheKey);
@@ -249,7 +264,7 @@ async function getRecordByName(promptName) {
 }
 
 module.exports = async (request, response) => {
-    console.log("Pipeline Engine v4 started.");
+    console.log("Pipeline Engine v5 started.");
 
     if (request.method !== 'POST') {
         return response.status(405).json({ error: 'Method Not Allowed' });
@@ -354,7 +369,8 @@ module.exports = async (request, response) => {
         }
 
     } catch (error) {
-        console.error("Pipeline Engine v4 Error:", error);
+        console.error("Pipeline Engine v5 Error:", error);
         response.status(500).json({ error: "Pipeline execution failed.", details: error.message });
     }
 };
+````
