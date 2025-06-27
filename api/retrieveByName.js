@@ -13,8 +13,11 @@ module.exports = async (request, response) => {
       return response.status(400).json({ error: 'Proxy Error: prompt_name is missing.' });
     }
     
+    const escapedPromptName = promptName.replace(/"/g, '\\"');
+    const filterFormula = `{Prompt Name} = "${escapedPromptName}"`;
+
     const records = await base(tableName).select({
-      filterByFormula: `{Prompt Name} = "${promptName}"`,
+      filterByFormula: filterFormula,
       maxRecords: 1
     }).firstPage();
 
