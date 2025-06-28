@@ -4,11 +4,29 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-module.exports = async (request, response) => {
-    if (request.method !== 'POST') {
-        return response.status(405).json({ error: 'Method Not Allowed' });
+// 메타데이터와 본문을 분리하는 헬퍼 함수
+function parsePrompt(rawContent) {
+    const parts = rawContent.split('---');
+    if (parts.length < 3) {
+        // 메타데이터가 없는 경우, 기본적으로 ai_generation으로 처리
+        return { metadata: { execution_mode: 'ai_generation' }, body: rawContent };
     }
+    const metadata = require('js-yaml').load(parts[1]);
+    const body = parts.slice(2).join('---').trim();
+    return { metadata, body };
+}
 
+// 템플릿을 사용자 입력으로 채우는 헬퍼 함수
+function populateTemplate(template, userInput) {
+    let populated = template;
+    for (const key in userInput) {
+        const regex = new RegExp(`{{${key}}}`, 'g');
+        populated = populated.replace(regex, userInput[key]);
+    }
+    return populated;
+}
+
+module.exports = async (request, response) => {
     try {
         const { prompt_url, user_input } = request.body;
         if (!prompt_url || !user_input) {
@@ -20,16 +38,34 @@ module.exports = async (request, response) => {
             return response.status(404).json({ error: 'Prompt file not found.' });
         }
         
-        // ✅ 수정된 부분: download 대신 fetch 사용
-        const promptContent = await (await fetch(prompt_url)).text();
-        const finalPrompt = `${promptContent}\n\n--- User Input ---\n\n${user_input}`;
+        const rawContent = await (await fetch(prompt_url)).text();
+        const { metadata, body: promptTemplate } = parsePrompt(rawContent);
 
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
-        const result = await model.generateContent(finalPrompt);
-        const aiResponse = await result.response;
-        const text = aiResponse.text();
+        let finalResult;
 
-        response.status(200).json({ result: text });
+        console.log(`Executing in mode: ${metadata.execution_mode}`);
+
+        if (metadata.execution_mode === 'simple_template') {
+            // --- 단순 템플릿 모드 ---
+            // 외부 AI 호출 없이, 텍스트를 직접 치환합니다.
+            finalResult = populateTemplate(promptTemplate, user_input);
+
+        } else if (metadata.execution_mode === 'ai_generation') {
+            // --- AI 생성 모드 ---
+            const finalPrompt = populateTemplate(promptTemplate, user_input);
+            const modelName = metadata.model || "gemini-1.5-pro-latest";
+            const model = genAI.getGenerativeModel({ model: modelName });
+            
+            const result = await model.generateContent(finalPrompt);
+            const aiResponse = await result.response;
+            finalResult = aiResponse.text();
+
+        } else {
+            throw new Error(`Unknown execution_mode: ${metadata.execution_mode}`);
+        }
+
+        response.status(200).json({ result: finalResult });
+
     } catch (error) {
         console.error("Run Prompt Error:", error);
         response.status(500).json({ error: 'Failed to execute prompt.', details: error.message });
