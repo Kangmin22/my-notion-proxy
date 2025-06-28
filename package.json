@@ -1,7 +1,10 @@
 {
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@vercel/blob": "^1.1.1",
     "@vercel/kv": "^1.0.1",
+    "airtable": "^0.12.2",
     "js-yaml": "^4.1.0",
-    "airtable": "^0.12.2"
+    "nanoid": "^3.3.11"
   }
 }
