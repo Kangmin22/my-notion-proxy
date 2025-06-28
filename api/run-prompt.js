@@ -1,19 +1,27 @@
 // api/run-prompt.js
-const { head, download } = require('@vercel/blob');
+const { head } = require('@vercel/blob');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 module.exports = async (request, response) => {
-    if (request.method !== 'POST') return response.status(405).send('Method Not Allowed');
+    if (request.method !== 'POST') {
+        return response.status(405).json({ error: 'Method Not Allowed' });
+    }
+
     try {
         const { prompt_url, user_input } = request.body;
-        if (!prompt_url || !user_input) throw new Error('prompt_url and user_input are required.');
+        if (!prompt_url || !user_input) {
+            throw new Error('prompt_url and user_input are required.');
+        }
 
         const blob = await head(prompt_url);
-        if (!blob) return response.status(404).json({ error: 'Prompt file not found.' });
+        if (!blob) {
+            return response.status(404).json({ error: 'Prompt file not found.' });
+        }
         
-        const promptContent = await (await download(prompt_url)).text();
+        // ✅ 수정된 부분: download 대신 fetch 사용
+        const promptContent = await (await fetch(prompt_url)).text();
         const finalPrompt = `${promptContent}\n\n--- User Input ---\n\n${user_input}`;
 
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
